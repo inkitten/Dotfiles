@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+hardMount() {
+
+    if [ -z "$1" ]; then
+        echo "Usage: hardMount <device>"
+        return 1
+    fi
+
+    sudo mkdir -p /tmp/hard
+
+    sudo mount "/dev/$1" /tmp/hard
+}

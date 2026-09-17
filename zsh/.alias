@@ -1,0 +1,7 @@
+#system
+alias cat="bat"
+#python
+alias py="python3"
+alias pi="ipython"
+alias venv="python -m venv .venv"
+alias venvon="source .venv/bin/activate"

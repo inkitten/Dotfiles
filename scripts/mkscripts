@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+make_file() {
+    if [[ -e $file ]]; then
+        echo "Warning!! '$file' already exist. Overwrite? [y/N]"
+        read -r confrim
+        if [[ "$confrim" != "y" && "$confrim" != "Y" ]]; then
+            echo "Aborted"
+            exit 1
+        fi
+    fi
+
+    echo "#!/usr/bin/env bash" >"$file"
+    echo "$file created with shebang"
+    chmod +x "$file"
+    echo "$file is now executable"
+}
+
+if [[ -n $1 ]]; then
+    file=$1
+else
+    read -p "Enter file path: " file
+fi
+
+if [[ -z $file ]]; then
+    echo "No file name given."
+    exit 1
+fi
+
+make_file
+nvim "$file"
