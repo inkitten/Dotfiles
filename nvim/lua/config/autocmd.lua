@@ -1,6 +1,19 @@
 -- Autocommands
 local api = vim.api
-vim.cmd [[colorscheme catppuccin]]
+
+-- Plugins are not on the runtimepath yet at this point, so never let a missing
+-- colorscheme abort init.lua; fall back to tokyonight once plugins are loaded.
+if not pcall(vim.cmd.colorscheme, "catppuccin") then
+	api.nvim_create_autocmd("VimEnter", {
+		once = true,
+		callback = function()
+			local c = vim.g.colors_name
+			if not c or c == "default" then
+				pcall(vim.cmd.colorscheme, "tokyonight")
+			end
+		end,
+	})
+end
 
 -- Create a general augroup helper
 local function augroup(name)

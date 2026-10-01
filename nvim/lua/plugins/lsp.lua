@@ -1,144 +1,159 @@
+-- LSP using ONLY system-installed servers (pacman / AUR). No Mason.
+-- A server is enabled only when its executable exists, so a missing package
+-- never produces errors. Run :ToolsCheck to see what is installed / missing.
 return {
 	{
-		"williamboman/mason.nvim",
-		config = function()
-			require("mason").setup()
-		end,
-	},
-
-	{
-		"williamboman/mason-lspconfig.nvim", -- handles auto-install & auto-enable
-		dependencies = { "neovim/nvim-lspconfig" },
-		config = function()
-			require("mason-lspconfig").setup({
-				ensure_installed = {
-					"lua_ls",
-					"clangd", -- covers C/C++ (dropped ccls: conflicts with clangd on same filetypes)
-					--"jsonls",
-					"marksman",
-					"rust_analyzer", -- was "rust-analyzer" (wrong name, underscore not hyphen)
-					--"ts_ls",
-					--"eslint", -- was "vscode-eslint" (wrong name)
-					--"hls", -- Haskell (dropped ghcide: old predecessor to hls, don't run both)
-					"pyright"
-				},
-				automatic_enable = true, -- auto vim.lsp.enable() on install/open
-			})
-		end,
-	},
-
-	{
 		"neovim/nvim-lspconfig",
-		-- Single spec now — config lives here, no duplicate entry
+		event = { "BufReadPre", "BufNewFile" },
+		dependencies = { "hrsh7th/cmp-nvim-lsp" },
 		config = function()
-			-- Load cmp's LSP capabilities so servers know what the completion UI supports
-			local capabilities = vim.lsp.protocol.make_client_capabilities()
-			local ok_cmp, cmp_lsp = pcall(require, "cmp_nvim_lsp")
-			if ok_cmp then
-				capabilities = cmp_lsp.default_capabilities(capabilities)
-			end
+			local tools = require("config.tools")
 
-			-- Shared on_attach (keymaps, etc.) — defined once, no duplicate opts/keymaps
-			local on_attach = function(_, bufnr)
-				local opts = { buffer = bufnr, noremap = true, silent = true }
-				vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)
-				vim.keymap.set("n", "gr", vim.lsp.buf.references, opts)
-				vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
-				vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
-				vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, opts)
-				vim.keymap.set("n", "<leader>f", function()
-					vim.lsp.buf.format({ async = true })
-				end, opts)
-			end
-
-			-- Customize servers that need tweaks (others use nvim-lspconfig defaults automatically)
-			vim.lsp.config("lua_ls", {
-				on_attach = on_attach,
-				capabilities = capabilities,
-				settings = {
-					Lua = {
-						diagnostics = { globals = { "vim" } },
-						workspace = {
-							checkThirdParty = false,
-							library = vim.api.nvim_get_runtime_file("", true),
-						},
-						telemetry = { enable = false },
+			---------------------------------------------------------------
+			-- Diagnostics look & behaviour
+			---------------------------------------------------------------
+			local sev = vim.diagnostic.severity
+			vim.diagnostic.config({
+				severity_sort = true,
+				update_in_insert = false,
+				underline = true,
+				virtual_text = { spacing = 2, source = "if_many", prefix = "●" },
+				float = { border = "rounded", source = true },
+				signs = {
+					text = {
+						[sev.ERROR] = vim.fn.nr2char(0xf057),
+						[sev.WARN] = vim.fn.nr2char(0xf071),
+						[sev.INFO] = vim.fn.nr2char(0xf05a),
+						[sev.HINT] = vim.fn.nr2char(0xf0335),
 					},
 				},
 			})
 
-			vim.lsp.config("pyright", {
-				on_attach = on_attach,
-				capabilities = capabilities,
-			})
+			---------------------------------------------------------------
+			-- Capabilities (nvim-cmp) for every server
+			---------------------------------------------------------------
+			local capabilities = vim.lsp.protocol.make_client_capabilities()
+			local ok_cmp, cmp_lsp = pcall(require, "cmp_nvim_lsp")
+			if ok_cmp then
+				capabilities = vim.tbl_deep_extend("force", capabilities, cmp_lsp.default_capabilities())
+			end
+			vim.lsp.config("*", { capabilities = capabilities })
 
-			-- For clangd, yamlls, jsonls, marksman, bashls, rust_analyzer, ts_ls, eslint, hls →
-			-- no custom settings needed. mason-lspconfig's automatic_enable already calls
-			-- vim.lsp.enable() for them, but they still need on_attach + capabilities,
-			-- so we set defaults for every server that doesn't have a custom vim.lsp.config above.
-			vim.lsp.config("*", {
-				on_attach = on_attach,
-				capabilities = capabilities,
-			})
-		end,
-	},
-
-	-- Completion: VSCode-style popup + Tab to accept
-	{
-		"hrsh7th/nvim-cmp",
-		event = "InsertEnter",
-		dependencies = {
-			"hrsh7th/cmp-nvim-lsp", -- LSP source
-			"hrsh7th/cmp-buffer", -- buffer words source
-			"hrsh7th/cmp-path", -- filesystem path source
-			"L3MON4D3/LuaSnip", -- snippet engine
-			"saadparwaiz1/cmp_luasnip", -- snippet source for cmp
-		},
-		config = function()
-			local cmp = require("cmp")
-			local luasnip = require("luasnip")
-
-			cmp.setup({
-				snippet = {
-					expand = function(args)
-						luasnip.lsp_expand(args.body)
-					end,
+			---------------------------------------------------------------
+			-- Per-server tweaks (everything else uses nvim-lspconfig defaults)
+			---------------------------------------------------------------
+			local overrides = {
+				lua_ls = {
+					settings = {
+						Lua = {
+							runtime = { version = "LuaJIT" },
+							diagnostics = { globals = { "vim" } },
+							workspace = {
+								checkThirdParty = false,
+								library = { vim.env.VIMRUNTIME, "${3rd}/luv/library" },
+							},
+							completion = { callSnippet = "Replace" },
+							hint = { enable = true },
+							telemetry = { enable = false },
+						},
+					},
 				},
-				mapping = cmp.mapping.preset.insert({
-					["<C-b>"] = cmp.mapping.scroll_docs(-4),
-					["<C-f>"] = cmp.mapping.scroll_docs(4),
-					["<C-Space>"] = cmp.mapping.complete(),
-					["<C-e>"] = cmp.mapping.abort(),
-					["<CR>"] = cmp.mapping.confirm({ select = true }), -- Enter confirms selection
+				clangd = {
+					cmd = {
+						"clangd",
+						"--background-index",
+						"--clang-tidy",
+						"--header-insertion=iwyu",
+						"--completion-style=detailed",
+					},
+					capabilities = { offsetEncoding = { "utf-16" } },
+				},
+				pyright = {
+					settings = {
+						python = {
+							analysis = {
+								autoSearchPaths = true,
+								useLibraryCodeForTypes = true,
+								diagnosticMode = "openFilesOnly",
+							},
+						},
+					},
+				},
+			}
 
-					-- Tab / Shift-Tab: VSCode-style cycle + accept
-					["<Tab>"] = cmp.mapping(function(fallback)
-						if cmp.visible() then
-							cmp.select_next_item()
-						elseif luasnip.expand_or_jumpable() then
-							luasnip.expand_or_jump()
-						else
-							fallback()
-						end
-					end, { "i", "s" }),
+			for name, info in pairs(tools.servers) do
+				vim.lsp.config(name, overrides[name] or {})
+				if tools.exe(info.bin) then
+					vim.lsp.enable(name)
+				end
+			end
 
-					["<S-Tab>"] = cmp.mapping(function(fallback)
-						if cmp.visible() then
-							cmp.select_prev_item()
-						elseif luasnip.jumpable(-1) then
-							luasnip.jump(-1)
-						else
-							fallback()
-						end
-					end, { "i", "s" }),
-				}),
-				sources = cmp.config.sources({
-					{ name = "nvim_lsp" },
-					{ name = "luasnip" },
-				}, {
-					{ name = "buffer" },
-					{ name = "path" },
-				}),
+			---------------------------------------------------------------
+			-- Keymaps & per-buffer features (run when a server attaches)
+			---------------------------------------------------------------
+			vim.api.nvim_create_autocmd("LspAttach", {
+				group = vim.api.nvim_create_augroup("custom_lsp_attach", { clear = true }),
+				callback = function(ev)
+					local client = vim.lsp.get_client_by_id(ev.data.client_id)
+					local function map(mode, lhs, rhs, desc)
+						vim.keymap.set(mode, lhs, rhs, { buffer = ev.buf, silent = true, desc = "LSP: " .. desc })
+					end
+
+					map("n", "gd", vim.lsp.buf.definition, "Go to definition")
+					map("n", "gD", vim.lsp.buf.declaration, "Go to declaration")
+					map("n", "gi", vim.lsp.buf.implementation, "Go to implementation")
+					map("n", "gy", vim.lsp.buf.type_definition, "Go to type definition")
+					map("n", "gr", vim.lsp.buf.references, "References")
+					map("n", "K", function()
+						vim.lsp.buf.hover({ border = "rounded" })
+					end, "Hover docs")
+					map("i", "<C-s>", vim.lsp.buf.signature_help, "Signature help")
+					map("n", "<leader>rn", vim.lsp.buf.rename, "Rename")
+					map({ "n", "v" }, "<leader>ca", vim.lsp.buf.code_action, "Code action")
+
+					-- <leader>e is Neo-tree, so line diagnostics live on <leader>d
+					map("n", "<leader>d", vim.diagnostic.open_float, "Line diagnostics")
+					map("n", "[d", function()
+						vim.diagnostic.jump({ count = -1, float = true })
+					end, "Previous diagnostic")
+					map("n", "]d", function()
+						vim.diagnostic.jump({ count = 1, float = true })
+					end, "Next diagnostic")
+					map("n", "<leader>dl", vim.diagnostic.setloclist, "Diagnostics to location list")
+
+					map("n", "<leader>ds", "<cmd>Telescope lsp_document_symbols<CR>", "Document symbols")
+					map("n", "<leader>ws", "<cmd>Telescope lsp_dynamic_workspace_symbols<CR>", "Workspace symbols")
+
+					if client and client:supports_method("textDocument/inlayHint", ev.buf) then
+						map("n", "<leader>uh", function()
+							local enabled = vim.lsp.inlay_hint.is_enabled({ bufnr = ev.buf })
+							vim.lsp.inlay_hint.enable(not enabled, { bufnr = ev.buf })
+						end, "Toggle inlay hints")
+					end
+
+					-- Highlight other uses of the symbol under the cursor
+					if client and client:supports_method("textDocument/documentHighlight", ev.buf) then
+						local hl = vim.api.nvim_create_augroup("custom_lsp_highlight_" .. ev.buf, { clear = true })
+						vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+							group = hl,
+							buffer = ev.buf,
+							callback = vim.lsp.buf.document_highlight,
+						})
+						vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+							group = hl,
+							buffer = ev.buf,
+							callback = vim.lsp.buf.clear_references,
+						})
+					end
+				end,
+			})
+
+			vim.api.nvim_create_autocmd("LspDetach", {
+				group = vim.api.nvim_create_augroup("custom_lsp_detach", { clear = true }),
+				callback = function(ev)
+					pcall(vim.api.nvim_del_augroup_by_name, "custom_lsp_highlight_" .. ev.buf)
+					vim.lsp.buf.clear_references()
+				end,
 			})
 		end,
 	},
